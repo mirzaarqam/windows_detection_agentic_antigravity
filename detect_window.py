@@ -61,6 +61,14 @@ def main():
             print(f"CUDA runtime check failed: {e}. Falling back to CPU.")
             device = "cpu"
 
+    # Ensure GroundingDINO model runs on the selected device
+    try:
+        dino_model = dino_model.to(device if device == "cuda" else "cpu")
+    except Exception as e:
+        print(f"Failed moving GroundingDINO model to {device}: {e}. Falling back to CPU.")
+        device = "cpu"
+        dino_model = dino_model.to("cpu")
+
     sam = sam_model_registry[args.sam_type](checkpoint=args.sam_weights)
     sam.to(device=device)
     sam_predictor = SamPredictor(sam)
@@ -69,6 +77,13 @@ def main():
     # GroundingDINO load_image returns (image_source, image_transformed)
     # image_source is numpy array (H, W, 3), image_transformed is Tensor
     image_source, image_transformed = load_image(args.image)
+    # Move transformed image tensor to target device to avoid unintended CUDA usage in model
+    try:
+        image_transformed = image_transformed.to(device if device == "cuda" else "cpu")
+    except Exception as e:
+        print(f"Failed moving image tensor to {device}: {e}. Using CPU.")
+        device = "cpu"
+        image_transformed = image_transformed.to("cpu")
 
     # Step 1: Detect windows
     # predict returns (boxes, logits, phrases)
