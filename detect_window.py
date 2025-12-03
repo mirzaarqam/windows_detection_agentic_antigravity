@@ -2,7 +2,8 @@ import os
 import argparse
 import cv2
 import torch
-from groundingdino.util.inference import Model as GroundingDINO
+import numpy as np
+from groundingdino.util.inference import load_model, load_image, predict
 from segment_anything import SamPredictor, sam_model_registry
 
 def main():
@@ -37,9 +38,9 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
 
     print("Loading models...")
-    # Load models
     try:
-        dino = GroundingDINO(model_config_path=args.dino_config, model_checkpoint_path=args.dino_weights)
+        # GroundingDINO load_model returns the model directly
+        dino_model = load_model(model_config_path=args.dino_config, model_checkpoint_path=args.dino_weights)
     except Exception as e:
         print(f"Error loading GroundingDINO model: {e}")
         print("Ensure you have the correct dependencies and model weights.")
@@ -50,49 +51,45 @@ def main():
     sam_predictor = SamPredictor(sam)
 
     print(f"Processing {args.image}...")
-    img = cv2.imread(args.image)
-    if img is None:
-        print("Failed to load image.")
-        return
+    # GroundingDINO load_image returns (image_source, image_transformed)
+    # image_source is numpy array (H, W, 3), image_transformed is Tensor
+    image_source, image_transformed = load_image(args.image)
 
     # Step 1: Detect windows
-    # predict method signature in user code: predict(img, text_prompt="window")
-    # Standard GroundingDINO predict usually takes (image, caption, box_threshold, text_threshold, device)
-    # The wrapper `Model` likely handles this.
-    boxes = dino.predict_with_caption(image=img, caption=args.text_prompt, box_threshold=args.box_threshold, text_threshold=args.text_threshold)
-    # Note: I changed `predict` to `predict_with_caption` or similar if I was writing from scratch, 
-    # but user used `dino.predict`. I will stick to `dino.predict` if that's what their wrapper does.
-    # However, to be helpful, I will assume the user might be using a specific library like `groundingdino-py` or similar.
-    # Let's stick to the user's method name `predict` but pass the extra args if accepted, or just the prompt.
-    # User code: `boxes = dino.predict(img, text_prompt="window")`
-    
-    # I'll use the user's exact call for `dino.predict` to avoid breaking their specific wrapper, 
-    # but I'll add the thresholds if the method supports **kwargs or if I can inspect it. 
-    # Since I can't inspect, I'll trust the user's snippet for the method name but add the thresholds to the call if possible.
-    # Actually, `dino.predict(img, text_prompt="window")` is very specific. 
-    # I will use that.
-    
-    boxes = dino.predict(img, text_prompt=args.text_prompt)
+    # predict returns (boxes, logits, phrases)
+    # boxes are normalized (cx, cy, w, h)
+    boxes, logits, phrases = predict(
+        model=dino_model,
+        image=image_transformed,
+        caption=args.text_prompt,
+        box_threshold=args.box_threshold,
+        text_threshold=args.text_threshold
+    )
 
     print(f"Found {len(boxes)} potential windows.")
 
     # Step 2: Segment with SAM
-    sam_predictor.set_image(img)
+    # SAM expects RGB image (numpy)
+    sam_predictor.set_image(image_source)
     
-    for i, box in enumerate(boxes):
+    # Convert normalized boxes (cx, cy, w, h) to (x1, y1, x2, y2) for SAM
+    h, w, _ = image_source.shape
+    boxes_xyxy = boxes * torch.Tensor([w, h, w, h])
+    boxes_xyxy = torch.cat([
+        boxes_xyxy[:, :2] - boxes_xyxy[:, 2:] / 2,
+        boxes_xyxy[:, :2] + boxes_xyxy[:, 2:] / 2
+    ], dim=1)
+
+    for i, box in enumerate(boxes_xyxy):
         # SAM predict expects box as [x1, y1, x2, y2]
-        # GroundingDINO often returns normalized boxes [cx, cy, w, h]. 
-        # The user's code: `x1, y1, x2, y2 = box` implies it returns xyxy.
-        # If it returns normalized, we need to convert. 
-        # I'll assume the wrapper handles it or returns xyxy as implied by `x1, y1, x2, y2 = box`.
+        box_np = box.numpy()
         
-        masks, scores, logits = sam_predictor.predict(box=box, multimask_output=False)
+        masks, scores, logits = sam_predictor.predict(box=box_np, multimask_output=False)
         
         # Save cropped window
-        x1, y1, x2, y2 = map(int, box) # Ensure ints for indexing
+        x1, y1, x2, y2 = map(int, box_np)
         
         # Clip to image bounds
-        h, w, _ = img.shape
         x1 = max(0, x1)
         y1 = max(0, y1)
         x2 = min(w, x2)
@@ -101,13 +98,13 @@ def main():
         if x2 <= x1 or y2 <= y1:
             continue
 
-        crop = img[y1:y2, x1:x2]
+        # Use image_source (RGB) but convert to BGR for OpenCV saving
+        crop = image_source[y1:y2, x1:x2]
+        crop_bgr = cv2.cvtColor(crop, cv2.COLOR_RGB2BGR)
+        
         output_filename = os.path.join(args.output_dir, f"window_crop_{i}.png")
-        cv2.imwrite(output_filename, crop)
+        cv2.imwrite(output_filename, crop_bgr)
         print(f"Saved {output_filename}")
-
-        # Optional: Save mask overlay
-        # ...
 
 if __name__ == "__main__":
     main()
