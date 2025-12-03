@@ -1,7 +1,6 @@
 import os
 import argparse
 import cv2
-import torch
 import numpy as np
 from groundingdino.util.inference import load_model, load_image, predict
 from segment_anything import SamPredictor, sam_model_registry
@@ -37,6 +36,14 @@ def main():
         return
 
     os.makedirs(args.output_dir, exist_ok=True)
+
+    # If CPU is requested, hide all CUDA devices before importing torch
+    if args.device == "cpu":
+        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+        os.environ["TORCH_CUDA_VISIBLE_DEVICES"] = "-1"
+
+    # Import torch after potentially setting CUDA visibility
+    import torch
 
     print("Loading models...")
     try:
