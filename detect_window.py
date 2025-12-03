@@ -12,6 +12,7 @@ def main():
     parser.add_argument("--box_threshold", type=float, default=0.35, help="Box threshold for GroundingDINO.")
     parser.add_argument("--text_threshold", type=float, default=0.25, help="Text threshold for GroundingDINO.")
     parser.add_argument("--dino_weights", type=str, default="groundingdino_swinb.pth", help="Path to GroundingDINO weights.")
+    parser.add_argument("--dino_config", type=str, default="GroundingDINO_SwinB_cfg.py", help="Path to GroundingDINO config.")
     parser.add_argument("--sam_weights", type=str, default="sam_vit_b.pth", help="Path to SAM weights.")
     parser.add_argument("--sam_type", type=str, default="vit_b", help="SAM model type.")
     parser.add_argument("--output_dir", type=str, default="output", help="Directory to save outputs.")
@@ -24,6 +25,10 @@ def main():
     if not os.path.exists(args.dino_weights):
         print(f"Error: GroundingDINO weights '{args.dino_weights}' not found. Please download them.")
         return
+
+    if not os.path.exists(args.dino_config):
+        print(f"Error: GroundingDINO config '{args.dino_config}' not found.")
+        return
     
     if not os.path.exists(args.sam_weights):
         print(f"Error: SAM weights '{args.sam_weights}' not found. Please download them.")
@@ -34,51 +39,11 @@ def main():
     print("Loading models...")
     # Load models
     try:
-        dino = GroundingDINO(model_config_path=None, model_checkpoint_path=args.dino_weights) # Note: config path might be needed depending on library version, usually inferred or passed separately if not default
-        # GroundingDINO wrapper usually handles config if we use the right class, but standard usage often requires a config file too. 
-        # The user provided `GroundingDINO("groundingdino_swinb.pth")` which implies a simplified wrapper or they have the config. 
-        # I will stick to the user's pattern but be aware `GroundingDINO` class from `groundingdino.util.inference` usually takes config_path and checkpoint_path.
-        # Let's assume the user's snippet `GroundingDINO("groundingdino_swinb.pth")` was slightly pseudo-code or relied on a specific helper.
-        # Standard GroundingDINO inference often looks like:
-        # model = load_model(config_path, checkpoint_path)
-        # But `groundingdino.util.inference.Model` is a higher level wrapper in some forks. 
-        # I will use the user's syntax but add a comment.
-        
-        # Actually, looking at common usage: 
-        # from groundingdino.util.inference import Model
-        # model = Model(model_config_path=CONFIG_PATH, model_checkpoint_path=WEIGHTS_PATH)
-        # I will need a config file. I'll assume standard config is available or user has it. 
-        # For now, I will try to find where `GroundingDINO` comes from. 
-        # If it is the `autodistill` wrapper or similar, it might be different.
-        # Given the import `from groundingdino.util.inference import Model as GroundingDINO`, this looks like the official repo's utility or a fork.
-        # The official repo `util.inference` has `load_model, load_image, predict`. It does NOT have a `Model` class usually.
-        # However, many tutorials create a wrapper class. 
-        # I will implement a robust wrapper here assuming the standard library structure if the user's specific import is hypothetical.
-        # BUT, the user gave specific code. I should respect it but make it runnable.
-        # If `GroundingDINO` class doesn't exist in `util.inference`, this will fail.
-        # I'll stick to the user's provided import for now, but I'll add the config path argument just in case, 
-        # and if the user's code was from a specific tutorial (like Roboflow), it might rely on that.
-        # Let's assume the user is using a version where `Model` exists or I should provide it.
-        # To be safe, I will implement the standard `load_model` approach if `Model` is not found, but since I can't run it, I will write the code as requested 
-        # but add a TODO about the config file which is usually required.
-        
-        # Wait, if I write the file, I can't easily change the import if it's wrong without running it.
-        # I'll write it as close to the user's snippet as possible but add the config argument.
-        
-        # Re-reading user snippet: `dino = GroundingDINO("groundingdino_swinb.pth")`
-        # This implies the class handles the config internally or defaults.
-        pass
+        dino = GroundingDINO(model_config_path=args.dino_config, model_checkpoint_path=args.dino_weights)
     except Exception as e:
-        print(f"Error loading models: {e}")
-        # Fallback or exit
-        pass
-
-    # Re-implementing based on user snippet but adding the missing pieces (like config) if possible, 
-    # or just trusting the user's environment has that specific wrapper.
-    # I will assume the user might need the config file `GroundingDINO_SwinB_cfg.py`.
-    
-    dino = GroundingDINO(model_checkpoint_path=args.dino_weights, model_config_path="GroundingDINO_SwinB_cfg.py") 
-    # I'll add a check for the config file in the main block.
+        print(f"Error loading GroundingDINO model: {e}")
+        print("Ensure you have the correct dependencies and model weights.")
+        return
 
     sam = sam_model_registry[args.sam_type](checkpoint=args.sam_weights)
     sam.to(device="cuda" if torch.cuda.is_available() else "cpu")
