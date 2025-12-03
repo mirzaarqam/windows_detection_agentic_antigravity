@@ -17,6 +17,7 @@ def main():
     parser.add_argument("--sam_weights", type=str, default="sam_vit_b.pth", help="Path to SAM weights.")
     parser.add_argument("--sam_type", type=str, default="vit_b", help="SAM model type.")
     parser.add_argument("--output_dir", type=str, default="output", help="Directory to save outputs.")
+    parser.add_argument("--device", type=str, choices=["cpu", "cuda"], default=None, help="Force device selection (cpu/cuda). Defaults to auto-detect.")
     args = parser.parse_args()
 
     if not os.path.exists(args.image):
@@ -46,8 +47,22 @@ def main():
         print("Ensure you have the correct dependencies and model weights.")
         return
 
+    # Determine device robustly
+    if args.device is not None:
+        device = args.device
+    else:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # Additional CUDA capability check: try a tiny tensor op
+    if device == "cuda":
+        try:
+            _ = torch.tensor([1.0], device="cuda") * 2
+        except Exception as e:
+            print(f"CUDA runtime check failed: {e}. Falling back to CPU.")
+            device = "cpu"
+
     sam = sam_model_registry[args.sam_type](checkpoint=args.sam_weights)
-    sam.to(device="cuda" if torch.cuda.is_available() else "cpu")
+    sam.to(device=device)
     sam_predictor = SamPredictor(sam)
 
     print(f"Processing {args.image}...")
