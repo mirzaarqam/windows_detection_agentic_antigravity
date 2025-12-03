@@ -4,11 +4,18 @@ This project detects and segments windows in images using GroundingDINO for dete
 
 ## Setup
 
-1.  **Install Dependencies**:
+1.  **Install Basic Dependencies**:
     ```bash
     pip install -r requirements.txt
     ```
-    *Note: You may need to install `groundingdino` and `segment_anything` manually if the pip install fails, as they depend on CUDA versions.*
+
+2.  **Install Model Libraries**:
+    It is recommended to install these separately to ensure `torch` is available during their build process.
+    ```bash
+    pip install git+https://github.com/IDEA-Research/GroundingDINO.git
+    pip install git+https://github.com/facebookresearch/segment-anything.git
+    ```
+    *Note: If you encounter errors, ensure you have a CUDA-capable GPU and the correct CUDA toolkit installed for `GroundingDINO`.*
 
 2.  **Download Model Weights**:
     You need to download the following model weights and place them in the project root:
